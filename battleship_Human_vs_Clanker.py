@@ -146,7 +146,7 @@ class BTS:
  
     def place_ships_clanker(self):
         """Clanker places ships"""
-        print("\nClanker placing ships")
+        print("\nClanker placing ships...")
         #time.sleep(5)
         for _, ship_length in self.ships.items():
             while True:
@@ -157,6 +157,7 @@ class BTS:
                 if self.is_valid_placement(self.clanker_board, ship_length, x, y, orientation):
                     self.place_ship_on_board(self.clanker_board, ship_length, x, y, orientation)
                     break # Move to the next ship
+        print("Clanker has placed its ships.")
 
     def get_player_guess(self):
             """Validity of guess"""
@@ -183,7 +184,7 @@ class BTS:
             self.player_guess_board[x][y] = 'H'
             self.clanker_board[x][y] = 'H' # Mark on clanker's board as hit
             
-            # Sunk check
+            #sunk check
             if self.check_and_mark_sunk(self.player_guess_board, self.clanker_board, x, y):
                 print(">>> You sunk their ship!")
             
@@ -220,10 +221,10 @@ class BTS:
         if target_board[x][y] != 'H':
             return False
 
-        ship_coords = []      # Chip co-ords
-        to_visit = [(x, y)]   # flood fill
-        visited = set()       # checking visited set
-        is_sunk = True        # assume sunk till proven else
+        ship_coords = []      #ship coords
+        to_visit = [(x, y)]   #flood fill
+        visited = set()       #prevent cycles
+        is_sunk = True        #assume sunk till proven else
 
         while to_visit:
             cx, cy = to_visit.pop()
@@ -245,7 +246,6 @@ class BTS:
                 to_visit.append((cx, cy - 1))
             
             elif cell == 'S':
-                
                 is_sunk = False
                 ship_coords.append((cx, cy)) # Still part of this ship
                 to_visit.append((cx + 1, cy))
@@ -261,7 +261,10 @@ class BTS:
         return False
 
     def check_game_over(self):
-        """whether either of their ships have been destroyed."""
+        """whether either of their ships have been destroyed
+        We can still use the 'H' count because 'X's on the guess board
+        replace 'H's, but the total number of hits needed to win
+        remains the same."""
         player_hits = sum(row.count('H') for row in self.player_guess_board)
         player_sunk = sum(row.count('X') for row in self.player_guess_board)
         if (player_hits + player_sunk) == self.total_ship_cells:
@@ -272,7 +275,6 @@ class BTS:
             return True
             
         clanker_hits = sum(row.count('H') for row in self.player_board)
-        clanker_sunk = sum(row.count('X') for row in self.clanker_guess_board) # Check clanker's *guess* board
         if (clanker_hits) == self.total_ship_cells: # Check 'H' on *player* board
             print("\n" + "="*30)
             print("Oh no! The clanker sunk all your ships! clanker WINS!")
@@ -299,6 +301,8 @@ class BTS:
         
             #clanker
             print("\n--- clanker's Turn ---")
+            # This is the key part: call the imported function
+            # We pass it the clanker's "memory" (guess board) and the board size
             try:
                 ax, ay = self.clanker_move_function(self.clanker_guess_board, self.size)
                 self.process_clanker_guess(ax, ay)
@@ -314,7 +318,36 @@ class BTS:
         
 
 if __name__=="__main__":
-    clanker_file = "battleship_clanker_simple" 
+    
+    """Created menu for algo selection"""
+    all_files = os.listdir('.') 
+    ai_files = [f for f in all_files if f.startswith('battleship_clanker_') and f.endswith('.py')]
+    
+    if not ai_files:
+        print("FATAL ERROR: No clanker AI files found.")
+        print("Make sure AI files (e.g., 'battleship_clanker_simple.py') are in the same folder.")
+        sys.exit(1)
 
-    bts=BTS(clanker_module=clanker_file)
+    print("\n--- Welcome to Battleship! ---")
+    print("Select your opponent:")
+    for i, file_name in enumerate(ai_files):
+        display_name = file_name.replace('battleship_clanker_', '').replace('.py', '').replace('_', ' ').title()
+        print(f"  {i + 1}: {display_name} ({file_name})")
+    
+    chosen_file = ""
+    while True:
+        try:
+            choice = input(f"Enter your choice (1-{len(ai_files)}): ")
+            choice_index = int(choice) - 1
+            
+            if 0 <= choice_index < len(ai_files):
+                chosen_file = ai_files[choice_index][:-3]
+                break
+            else:
+                print("Invalid choice. Please enter a number from the list.")
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+
+    print(f"\nStarting game against {chosen_file}...")
+    bts=BTS(clanker_module=chosen_file)
     bts.play_game()
