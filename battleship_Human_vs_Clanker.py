@@ -1,5 +1,6 @@
 import random
 import time
+import sys
 import importlib
 import os
 
@@ -44,17 +45,30 @@ class BTS:
 
     def import_clanker(self, clanker_module):
         """Dynamically imports the clanker module and gets its move function."""
-
-        if clanker_module.endswith(".py"):
-            clanker_module = clanker_module[:-3]
+        try:
+            if clanker_module.endswith(".py"):
+                clanker_module = clanker_module[:-3]
+                
+            print(f"Fecthing clanker algo from {clanker_module}.py")
+            # Use importlib to load the module
+            clanker_mod = importlib.import_module(clanker_module)
             
-        print(f"Fecthing clanker algo from {clanker_module}.py")
-        # Use importlib to load the module
-        clanker_mod = importlib.import_module(clanker_module)
+            # Get the required function from the loaded module
+            self.clanker_move_function = getattr(clanker_mod, 'get_clanker_move')
+            print("clanker algo imported.")
         
-        # Get the required function from the loaded module
-        self.clanker_move_function = getattr(clanker_mod, 'get_clanker_move')
-        print("clanker algo imported.")
+        except ImportError:
+            print(f"FATAL ERROR: Could not find the clanker AI file '{clanker_module}.py'")
+            print("Please make sure it is in the same directory as battleship_main.py")
+            sys.exit(1)
+        except AttributeError:
+            print(f"FATAL ERROR: The file '{clanker_module}.py' is missing the function 'get_clanker_move'.")
+            print("Please make sure the function is defined correctly.")
+            sys.exit(1)
+        except Exception as e:
+            print(f"An unexpected error occurred while importing the clanker AI: {e}")
+            sys.exit(1)
+
 
     def create_board(self):
         return [[' ' for _ in range(self.size)] for _ in range(self.size)]
@@ -62,10 +76,10 @@ class BTS:
     def print_boards(self):
         """Decided to print out both boards"""
         print("\n" + "="*53)
-        print("     PLAYER'S GUESSES                  YOUR BOARD ")
-        header = "   " + " ".join([f"{i}" for i in range(self.size)])
+        print("     PLAYER'S GUESSES                 YOUR BOARD")
+        header = "    " + " ".join([f"{i}" for i in range(self.size)])
         print(header + "        " + header)
-        print("   " + "-"*(self.size*2+1) + "        " + "   " + "-"*(self.size*2+1))
+        print("   " + "-"*(self.size*2+1) + "        " + "  " + "-"*(self.size*2+1))
         
         for i in range(self.size):
             row_guess = " ".join(self.player_guess_board[i]) 
@@ -75,9 +89,10 @@ class BTS:
         print("   " + "-"*(self.size*2+1) + "        " + "  " + "-"*(self.size*2+1))
         print("Legend: 'S' = Your Ship, 'H' = Hit, 'M' = Miss, 'X' = Sunk Ship Part")
 
+
     def is_valid_placement(self, board, ship_size, x, y, orientation):
         """Just to clarify no placements are done here, only validity is checked
-           Checks if a ship can be placed at the given location."""
+            Checks if a ship can be placed at the given location."""
         if orientation == 'h':
             if y + ship_size > self.size:
                 return False
@@ -167,6 +182,12 @@ class BTS:
             print(">>> HIT!")
             self.player_guess_board[x][y] = 'H'
             self.clanker_board[x][y] = 'H' # Mark on clanker's board as hit
+            
+            # Sunk check
+            if self.check_and_mark_sunk(self.player_guess_board, self.clanker_board, x, y):
+                print(">>> You sunk their ship!")
+            
+
         else:
             print(">>> MISS!")
             self.player_guess_board[x][y] = 'M'
@@ -182,23 +203,81 @@ class BTS:
             print(">>> clanker HIT your ship!")
             self.player_board[x][y] = 'H'
             self.clanker_guess_board[x][y] = 'H' 
+
+            if self.check_and_mark_sunk(self.clanker_guess_board, self.player_board, x, y):
+                print(">>> The clanker sunk your ship!")
         else:
             print(">>> clanker missed.")
 
+    def check_and_mark_sunk(self, guess_board, target_board, x, y):
+        """
+        Checks if the hit at (x, y) sunk an entire ship.
+        If yes, marks all ship parts as 'X' on the guess_board.
+        Uses a flood-fill (connected components) algorithm.
+        """
+        
+        # Check if the hit cell is valid (should always be 'H' but check)
+        if target_board[x][y] != 'H':
+            return False
+
+        ship_coords = []      # Chip co-ords
+        to_visit = [(x, y)]   # flood fill
+        visited = set()       # checking visited set
+        is_sunk = True        # assume sunk till proven else
+
+        while to_visit:
+            cx, cy = to_visit.pop()
+
+            if (cx, cy) in visited:
+                continue
+            visited.add((cx, cy))
+
+            if not (0 <= cx < self.size and 0 <= cy < self.size):
+                continue
+
+            cell = target_board[cx][cy]
+
+            if cell == 'H':
+                ship_coords.append((cx, cy))
+                to_visit.append((cx + 1, cy))
+                to_visit.append((cx - 1, cy))
+                to_visit.append((cx, cy + 1))
+                to_visit.append((cx, cy - 1))
+            
+            elif cell == 'S':
+                
+                is_sunk = False
+                ship_coords.append((cx, cy)) # Still part of this ship
+                to_visit.append((cx + 1, cy))
+                to_visit.append((cx - 1, cy))
+                to_visit.append((cx, cy + 1))
+                to_visit.append((cx, cy - 1))
+        
+        if is_sunk:
+            for (r, c) in ship_coords:
+                guess_board[r][c] = 'X'
+            return True
+        
+        return False
+
     def check_game_over(self):
-        """whether either of their ships have been destroyed"""
+        """whether either of their ships have been destroyed."""
         player_hits = sum(row.count('H') for row in self.player_guess_board)
-        if player_hits == self.total_ship_cells:
+        player_sunk = sum(row.count('X') for row in self.player_guess_board)
+        if (player_hits + player_sunk) == self.total_ship_cells:
             print("\n" + "="*30)
             print("Hooray! YOU WIN! All clanker ships sunk!")
             print("="*30)
+            self.print_boards() # Show final board
             return True
             
         clanker_hits = sum(row.count('H') for row in self.player_board)
-        if clanker_hits == self.total_ship_cells:
+        clanker_sunk = sum(row.count('X') for row in self.clanker_guess_board) # Check clanker's *guess* board
+        if (clanker_hits) == self.total_ship_cells: # Check 'H' on *player* board
             print("\n" + "="*30)
             print("Oh no! The clanker sunk all your ships! clanker WINS!")
             print("="*30)
+            self.print_boards() # Show final board
             return True
             
         return False
@@ -211,17 +290,15 @@ class BTS:
         while True:
             self.print_boards()
             
-            # --- Player's Turn ---
+            #Player
             print("\n--- Your Turn ---")
             px, py = self.get_player_guess()
             self.process_player_guess(px, py)
             if self.check_game_over():
                 break
         
-            # --- clanker's Turn ---
+            #clanker
             print("\n--- clanker's Turn ---")
-            # This is the key part: call the imported function
-            # We pass it the clanker's "memory" (guess board) and the board size
             try:
                 ax, ay = self.clanker_move_function(self.clanker_guess_board, self.size)
                 self.process_clanker_guess(ax, ay)
@@ -233,7 +310,8 @@ class BTS:
                 break
             
             input("Press Enter to continue to the next turn...")
-                
+            
+        
 
 if __name__=="__main__":
     clanker_file = "battleship_clanker_simple" 
