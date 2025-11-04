@@ -76,8 +76,8 @@ class BTS:
         print("Legend: 'S' = Your Ship, 'H' = Hit, 'M' = Miss, 'X' = Sunk Ship Part")
 
     def is_valid_placement(self, board, ship_size, x, y, orientation):
-        """Just to clarify no placements are done here, only validity is checked"""
-        """Checks if a ship can be placed at the given location."""
+        """Just to clarify no placements are done here, only validity is checked
+           Checks if a ship can be placed at the given location."""
         if orientation == 'h':
             if y + ship_size > self.size:
                 return False
@@ -93,7 +93,8 @@ class BTS:
         return True
 
     def place_ship_on_board(self, board, ship_size, x, y, orientation, ship_char='S'):
-        """Actually places ship as wanted by the person or a clanker"""
+        """Actually places ship as wanted by the person or a clanker
+           Post validity checks"""
         if orientation == 'h':
             for i in range(ship_size):
                 board[x][y+i] = ship_char
@@ -131,7 +132,7 @@ class BTS:
     def place_ships_clanker(self):
         """Clanker places ships"""
         print("\nClanker placing ships")
-        time.sleep(5)
+        #time.sleep(5)
         for _, ship_length in self.ships.items():
             while True:
                 orientation = random.choice(['h', 'v'])
