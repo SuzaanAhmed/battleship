@@ -1,0 +1,329 @@
+% Basic setup
+\documentclass[12pt,a4paper]{article} % Defines the document type as an article with 12pt font size on A4 paper.
+% Importing packages
+\usepackage[english]{babel} % Sets the document language to English, adjusting hyphenation and language-specific typographic rules.
+\usepackage[lmargin=2.5cm,rmargin=2.5cm,tmargin=2.5cm,bmargin=2.5cm]{geometry} % Sets custom page margins: left/right 2.5cm, top 2.5cm, bottom 2.5cm.
+% Loading packages
+\usepackage{hyperref}    % Enables hyperlinks for references, URLs, and citations.
+\usepackage{xcolor}      % Provides tools for defining and using colors.
+\usepackage{graphicx}    % Allows inclusion of images and graphics.
+\usepackage{caption}     % Customizes captions for figures and tables.
+\usepackage{subcaption}  % Supports subfigures and subcaptions within figures.
+\usepackage{minted}      % Enables syntax highlighting for code listings.
+\usepackage[T1]{fontenc} % Ensures proper font encoding, important for correct character rendering. Don't touch this.
+\usepackage{lmodern}     % Sets the font to something more modern and easy to read.
+\usepackage{setspace}    % Provides control over line spacing.
+\usepackage{csquotes}    % Improves handling of quotations.
+\usepackage{setspace}    % Used to set line spacing
+\usepackage{longtable,booktabs,array} % Packages for advanced table formatting.
+\usepackage[
+  backend=biber,
+  style=apa,  
+]{biblatex}  % Manages citations and bibliography with APA style.
+\setstretch{1.5} % Sets line spacing
+\definecolor{LightGray}{gray}{0.9}  % Defines a custom color 'LightGray' with 90% gray, used for the code block background.
+\hypersetup{                        % Configures hyperlink colors and behavior.
+  colorlinks=true,                  % Enable colored links instead of boxes.
+  linkcolor={blue},                 % Sets link color to blue.
+  filecolor={maroon},               % Sets file link color to maroon.
+  citecolor={blue},                 % Sets citation link color to blue.
+  urlcolor={blue}}                  % Sets URL link color to blue.
+\addbibresource{assets/bib-template.bib} % Adds the bibliography file.
+
+\begin{document}
+\pagenumbering{gobble} % Stops counting the pages from this point until changed again.
+\newpage
+\renewcommand*\contentsname{Table of Contents} % This controls the title of your table of contents.
+{
+\hypersetup{linkcolor=}
+\setcounter{tocdepth}{5} % Sets the maximum sublevel to be displayed within the table of contents.
+\tableofcontents
+}
+\newpage
+\pagenumbering{arabic}\setstretch{1.5} % Overwrites the previous command, pages are counted as normal from this point.
+
+\begin{abstract}
+This paper details the design of a modular Battleship simulation in Python, architected to dynamically load and test different AI opponents. We present and compare three distinct AI strategies: a random baseline, a standard hunt-target algorithm, and an advanced flooding-and-parity model. The system's 'plug-and-play' framework, centered on a common \texttt{get\_clanker\_move} interface, allows for a clear comparison of algorithm efficiency, demonstrating the progression from naive searching to sophisticated, orientation-aware targeting.
+\end{abstract}
+
+\section{Introduction}
+The game of Battleship is a classic combinatorial search problem. Two players place a fleet of ships on a 10x10 grid, hidden from their opponent. Players then take turns guessing coordinates (e.g., "A5") to "fire" at. The opponent must declare whether the shot is a "hit" or a "miss." The goal is to "sink" all of the opponent's ships by hitting every cell they occupy.
+
+Beyond its nature as a simple game, Battleship serves as an excellent case study for search algorithms and stateful AI. The challenge lies in using the limited information from hits and misses to deduce the location of unseen ships efficiently.
+
+This paper presents a Battleship simulation developed in Python. The primary goal of this project is not merely to create a playable game, but to build a modular framework for implementing and comparing different AI "Clanker" strategies. The system's main game engine is designed to dynamically import an AI's logic from a separate Python file, allowing for easy "plug-and-play" testing of various algorithms against a human player or each other.
+
+\section{System Architecture}
+The project is divided into a main game engine and a set of swappable AI modules.
+
+\subsection{Main Game Engine}
+The core logic resides in \texttt{battleship\_Human\_vs\_Clanker.py}. This file is responsible for:
+\begin{itemize}
+    \item \textbf{Game Setup:} Initializing the 10x10 grids. The system maintains four distinct boards: \texttt{player\_board} (the player's ships), \texttt{clanker\_board} (the AI's ships), \texttt{player\_guess\_board} (the player's view of the AI's board), and \texttt{clanker\_guess\_board} (the AI's view of the player's board).
+    \item \textbf{Ship Placement:} Handling manual placement for the human player and random placement for the AI, both with overlap and boundary validation.
+    \item \textbf{Turn Management:} Alternating turns between the player and the AI.
+    \item \textbf{State Processing:} Updating the boards with 'H' for hit, 'M' for miss, and 'X' for a sunk ship part.
+    \item \textbf{AI Module Importation:} At startup, the engine uses Python's \texttt{importlib} library to dynamically load a chosen AI module (e.g., \texttt{battleship\_clanker\_random.py}).
+\end{itemize}
+
+\subsection{The \texttt{get\_clanker\_move} Interface}
+The key to the system's modularity is a single function "contract." Any Python file intended to serve as a Clanker AI must provide a function with the following signature:
+
+\begin{verbatim}
+def get_clanker_move(guess_board, size):
+    # ... algorithm logic ...
+    return (row, col)
+\end{verbatim}
+
+The main engine passes the AI its \emph{own} guess board (\texttt{clanker\_guess\_board}), which represents its "memory" of the game. What the AI does here is analyzing the board to check for all single \texttt{(row, col)} and returns it as a tuple for it's next guess. This allows for independent logic for AI from the game's main logic.
+
+\section{AI Algorithm Implementations}
+We implemented and tested three Clanker AIs of increasing complexity. Each AI adheres to the same \texttt{get\_clanker\_move(guess\_board, size)} interface, allowing the main engine to swap them. Their internal logic, however, varies significantly.
+
+\subsection{Baseline: Random Guessing}
+This one is the most plain and simple algorithm, \texttt{battleship\_clanker\_random.py}, as it is purely random choice. It is just a stateless algorithm that randomly selects any unoccupied cell. 
+
+\subsubsection{Core Logic Snippet}
+\begin{minted}[bgcolor=LightGray]{python}
+def get_clanker_move(guess_board, size):
+    available_moves = []
+    for r in range(size):
+        for c in range(size):
+            if guess_board[r][c] == ' ':
+                available_moves.append((r, c))
+
+    if not available_moves:
+        return (0, 0) 
+
+    # Pick a random move from the available list
+    return random.choice(available_moves)
+\end{minted}
+
+\subsubsection{Implementation Analysis}
+The implementation in \texttt{battleship\_clanker\_random.py} follows no specific logic as it relies on randomness. On every turn, it scans the entire \texttt{guess\_board} to get a list of all the positions on the board marked with ' ' (empty). It then uses Python's \texttt{random.choice} to select and return one tuple from this list.
+
+This strategy is highly inefficient as it is \textbf{stateless}. It has no memory and ignores all previous game information. A 'Miss' ('M') or 'Hit' ('H') on the board has no influence on its next decision, meaning it will never intelligently target a ship it has found.
+
+\subsection{Standard Hunt-Target}
+The \texttt{battlsehip\_clanker\_hunt\_target.py} file implements a classic two-mode strategy. This AI is **stateful**, using a persistent global \texttt{memory} dictionary to track its current mode and targets.
+
+\subsubsection{Core Logic Snippet}
+\begin{minted}[bgcolor=LightGray]{python}
+# Internal memory for the AI (persistent across turns)
+memory = {
+    "mode": "hunt",          # "hunt" or "target"
+    "last_hits": [],         # List of cells where hits occurred
+    "potential_targets": []  # Next coordinates to try
+}
+
+def get_clanker_move(guess_board, size):
+    global memory
+
+    # --- Check for new hits on the board ---
+    for r in range(size):
+        for c in range(size):
+            if guess_board[r][c] == 'H' and (r, c) not in memory["last_hits"]:
+                # Found a new hit on the board
+                memory["last_hits"].append((r, c))
+                memory["mode"] = "target"
+                # Add valid neighbors to potential_targets
+                memory["potential_targets"].extend(get_neighbors(r, c))
+
+    # --- Target Mode: systematically finish off a ship ---
+    if memory["mode"] == "target" and memory["potential_targets"]:
+        move = memory["potential_targets"].pop(0)
+        return move
+
+    # --- Fallback to hunt mode ---
+    if memory["mode"] == "target" and not memory["potential_targets"]:
+        memory["mode"] = "hunt"
+
+    # --- Hunt Mode: pick random empty cell ---
+    available_moves = [
+        (r, c)
+        for r in range(size)
+        for c in range(size)
+        if guess_board[r][c] == ' '
+    ]
+    
+    return random.choice(available_moves)
+\end{minted}
+
+\subsubsection{Implementation Analysis}
+This AI introduces a global \texttt{memory} dictionary to persist its state across turns. The state consists of:
+\begin{itemize}
+    \item \textbf{\texttt{mode}:} Either \textit{hunt} or \textit{target}.
+    \item \textbf{\texttt{last\_hits}:} A list to remember which 'H' cells have already been processed, to avoid re-adding their neighbors.
+    \item \textbf{\texttt{potential\_targets}:} A list used as a FIFO queue for coordinates to try next.
+\end{itemize}
+
+The algorithm's logic flow is as follows:
+\begin{enumerate}
+    \item \textbf{Check for New Hits:} The AI first scans the entire \texttt{guess\_board} for any 'H' cells that are not in its \texttt{memory[last\_hits]} list.
+    
+    \item \textbf{Switch to Target Mode:} If a new hit is found, the AI switches \texttt{memory["mode"]} to "target", adds the hit's coordinates to \texttt{last\_hits}, and appends all valid, empty, orthogonal neighbors to the \texttt{potential\_targets} queue.
+    \item \textbf{Execute Move:}
+        \begin{itemize}
+            \item \textbf{Target Mode:} If the AI is in \textit{target} mode and the \texttt{potential\_targets} queue is not empty, it pops the first coordinate from the queue and returns it. 
+            
+            \item \textbf{Hunt Mode:}  If the AI is in \textit{hunt} mode which it can enter if the \texttt{target\_queue} is empty, it behaves in randomness where it builds a full list of all empty cells and returns a random one.
+        \end{itemize}
+\end{enumerate}
+This is a significant improvement, but it is \textit{dumb} in its targeting. If it has two hits in a row, like (3,3) and (3,4), it will add neighbors for both, including (2,3), (4,3), (2,4), and (4,4). It does not deduce the ship's 'horizontal' orientation and continues to waste moves checking perpendicular directions.
+
+\subsection{Advanced Flooding and Parity-Hunt}
+The \texttt{battleship\_clanker\_flooding.py} file implements the most sophisticated algorithm. It is \textit{stateless} (contains no global memory) but performs a much more complex analysis of the board on every single turn. It refines both the "hunt" and "target" modes.
+
+\subsubsection{Core Logic Snippet (Target Mode)}
+\begin{minted}[bgcolor=LightGray]{python}
+def get_clanker_move(guess_board, size):
+    # ... (empties list is created) ...
+    hits = [(r, c) for r in range(size) for c in range(size) 
+            if guess_board[r][c] == 'H']
+
+    # If there are hits, attempt targeted flooding
+    if hits:
+        visited = set()
+        clusters = []
+        # ... (BFS logic to build clusters) ...
+        
+        # For each cluster, try to determine orientation and extend
+        for cluster in clusters:
+            if len(cluster) >= 2:
+                rows = {r for r, _ in cluster}
+                cols = {c for _, c in cluster}
+                if len(rows) == 1: # horizontal line
+                    r = next(iter(rows))
+                    ys = sorted(c for _, c in cluster)
+                    #... (check left and right ends)
+                    if candidates: return random.choice(candidates)
+                elif len(cols) == 1: # vertical line
+                    c = next(iter(cols))
+                    xs = sorted(r for r, _ in cluster)
+                    #... (check up and down ends)
+                    if candidates: return random.choice(candidates)
+
+            # If cluster size == 1, try orthogonal neighbors
+            for (hr, hc) in cluster:
+                # ... (check neighbors) ...
+                for nbr in nbors:
+                    if is_empty(nbr): return nbr
+\end{minted}
+
+\subsubsection{Core Logic Snippet (Hunt Mode)}
+\begin{minted}[bgcolor=LightGray]{python}
+    # ... (from same function, if 'if hits:' is false) ...
+
+    # HUNT mode (no hits): use checkerboard parity to improve odds
+    parity_cells = [cell for cell in empties 
+                    if (cell[0] + cell[1]) % 2 == 0]
+    if parity_cells:
+        return random.choice(parity_cells)
+    else:
+        return random.choice(empties) # Fallback
+}
+\end{minted}
+
+\subsubsection{Implementation Analysis}
+This AI's logic is split based on whether any 'H' (hit) cells exist on the board.
+
+\begin{itemize}
+    \item \textbf{Parity Hunt Mode (No Hits):} If there are no 'H' cells, the AI enters "hunt" mode. Instead of picking from all empty cells, it first builds a list of `\texttt{parity\_cells}`. These are all empty cells where \texttt{(row + col) \% 2 == 0} effectively, all the "black" squares on a checkerboard. It then returns a random cell from this `\texttt{parity\_cells}` list. This strategy is statistically far more efficient, as any ship of length 2 or more \emph{must} occupy cells of both parities. This method guarantees finding a ship faster than purely random guessing.
+
+    \item \textbf{Flooding Target Mode (Hits Present):} If hits are on the board, the AI performs a complex "flooding" analysis:
+        \begin{enumerate}
+            \item \textbf{Clustering:} It first iterates through all 'H' cells and uses a Breadth-First Search (BFS) to group them into "clusters" of orthogonally adjacent hits. For example, `[(1,1), ([1,2)]` would be one cluster, and `[(5,5)]` would be a separate cluster.
+            \item \textbf{Orientation Analysis:} It then analyzes each cluster. If a cluster has **two or more hits**, it deduces the ship's orientation. It checks if all \texttt{row} coordinates in the cluster are the same (horizontal) or all \texttt{column} coordinates are the same (vertical).\begin{enumerate}
+            \item \textbf{Clustering:} It first iterates through all 'H' cells and uses a Breadth-First Search (BFS) to group them into "clusters" of orthogonally adjacent hits. For example, `[(1,1), (1,2)]` would be one cluster, and `[(5,5)]` would be a separate cluster.
+            
+            \item \textbf{Orientation-Aware Targeting:} It then analyzes each cluster. If a cluster has \textbf{two or more hits}, it deduces the ship's orientation (horizontal or vertical). It \emph{only} targets the two empty "end" cells of that line (e.g., \texttt{`(r, min\_col - 1)`} and \texttt{`(r, max\_col + 1)`}).  If it finds a valid target, it fires and its turn ends.
+            
+            \item \textbf{Neighbor-Check Fallback:} If the AI is in \textit{target} mode but the step above did not result in a move (either because a cluster had only \textbf{one hit}, or a multi-hit cluster had its \textit{ends} blocked), the code "falls through" to its general fallback logic. This logic iterates through every hit in the cluster and checks all of its orthogonal neighbors, returning the first empty one it finds.
+        \end{enumerate}
+\end{itemize}
+This stateless, analytical approach makes it significantly more efficient at both finding and sinking ships than the other two algorithms.
+
+
+
+
+
+
+
+
+\section{Core Game Mechanics}\label{game-mechanics}
+Two core functions in the main engine, beyond the AI, are critical for gameplay.
+
+\subsection{Ship Placement}
+Both the player and the AI use the same validation logic, \texttt{is\_valid\_placement}. This function checks two conditions before a ship is placed:
+\begin{itemize}
+    \item[1] \textbf{Bounds Check:} Does the ship's length, starting at the given coordinate and orientation, extend off the 10x10 grid?
+    \item[2] \textbf{Overlap Check:} Does any cell the new ship would occupy already contain a ship part ('S')?
+\end{itemize}
+Only if both checks pass is the ship placed on the board using \texttt{place\_ship\_on\_board}.
+
+\subsection{Hit and Sinking Logic}
+The most complex piece of game logic is the \texttt{check\_and\_mark\_sunk} function. It is not enough to just mark a "hit." The game must know when a ship is \emph{completely} sunk.
+When a hit occurs, this function is called on the \emph{target's} board. It performs a flood-fill (or breadth-first search) starting from the coordinate that was just hit (\texttt{x, y}).
+\begin{itemize}
+    \item[•] It explores all connected cells, looking for adjacent 'H' (hit) or 'S' (un-hit ship part) cells.
+    \item[•] It maintains a flag, \texttt{is\_sunk}, which starts as \texttt{True}.
+    \item[•] If the flood-fill encounters \emph{any} 'S' cell, it means a part of this same ship is still intact. The \texttt{is\_sunk} flag is set to \texttt{False}, and the search can terminate early.
+    \item[•] If the flood-fill completes without finding any 'S' cells (meaning all connected parts are 'H'), the \texttt{is\_sunk} flag remains \texttt{True}. The function then iterates over all coordinates found during the search and updates the \emph{guesser's} board, changing all 'H' markers for that ship to 'X' (sunk).
+\end{itemize}
+This 'X' marker is crucial, as it provides valuable information to both the human and the AI (e.g., "I can stop targeting cells around this 'X'").
+
+\subsection{AI Reaction to Hit and Sink Information}
+The \texttt{check\_and\_mark\_sunk} function is part of the game engine and is identical for all players. The key difference between the AIs is not in \emph{detecting} a sink, but in how they \emph{interpret and react} to the 'H' (Hit) and 'X' (Sunk) markers on their \texttt{guess\_board} on subsequent turns.
+
+\begin{itemize}
+    \item[•] \textbf{Random Guessing AI:} This AI has no reaction. Its logic only searches for ' ' (empty) cells. The presence of 'H' or 'X' markers on the board has no influence on its decision-making process.
+    
+    \item[•] \textbf{Standard Hunt-Target AI:} This AI has a simple reaction to 'H' but no specific reaction to 'X'. When it scans the board and finds a \emph{new} 'H', it adds all adjacent empty cells to its \texttt{potential\_targets} queue. However, it does not have logic to "clear" this queue if the ship is sunk. If a ship is sunk (and its cells turn to 'X'), the AI will *still* fire at any remaining "dumb" guesses in its queue (e.g., perpendicular cells) until the queue is empty, at which point it reverts to "hunt" mode.
+    
+    \item[•] \textbf{Advanced Flooding AI:} This AI reacts intelligently to both 'H' and 'X' markers, although its 'X' reaction is implicit. On its turn, it \emph{only} searches for 'H' cells to form its clusters. When the game engine runs \texttt{check\_and\_mark\_sunk}, it replaces all 'H' cells with 'X' on the AI's guess board. This means that on the AI's \emph{next} turn, the 'H' cells from the sunk ship are gone. The AI will not find them when building its clusters, and will therefore automatically and immediately stop targeting that ship. This is a far more efficient and "clean" way to handle a sunk event, as it requires no special logic to manage target queues.
+\end{itemize}
+
+\section{Using code}
+While the full project consists of several files, the \texttt{minted} package allows for clear presentation of key code snippets. The logic for the efficient "Parity Hunt" from the advanced AI is a prime example of the project's algorithmic focus.
+
+\begin{minted}
+[
+bgcolor=LightGray
+]
+{python}
+# From battleship_clanker_flooding.py
+
+# ... (inside get_clanker_move) ...
+
+# HUNT mode (no hits): use checkerboard parity to improve odds
+# prefer cells where (r+c) % 2 == 0 
+# (cover maximum without overlaps for ships >=2)
+parity_cells = [cell for cell in empties if (cell[0] + cell[1]) % 2 == 0]
+if parity_cells:
+    return random.choice(parity_cells)
+else:
+    # Fallback if all parity cells are taken (e.g., for 1-cell ship)
+    return random.choice(empties)
+\end{minted}
+This small block of code demonstrates a simple, yet highly effective, optimization that drastically reduces the number of guesses needed to find the first hit compared to a naive random search.
+
+\section{Conclusion}
+This project successfully implements a modular framework for the game Battleship, allowing for the direct comparison of different AI search strategies. The clear "contract" of the \texttt{get\_clanker\_move} function proved to be a robust design, allowing AI logic to be developed and tested in complete isolation from the main game engine.
+
+The three implemented AIs demonstrate a clear and logical progression in efficiency.
+
+The \texttt{battleship\_clanker\_random} module provides a necessary baseline. Its strategy of randomly choosing any open cell, while functional, is predictably inefficient as it ignores all previous game-state information. Its primary effect is to establish a lower-bound performance metric against which all other strategies can be quantitatively measured.
+
+The \texttt{battleship\_clanker\_hunt\_target} algorithm represents a significant leap forward. It introduces a stateful, two-mode model ("hunt" and "target") that uses "hit" information to investigate adjacent cells. This transition from a stateless to a stateful strategy dramatically reduces the moves needed to sink a ship once found. However, its effectiveness is limited by "dumb" targeting, as it probes all four orthogonal neighbors without deducing the ship's orientation.
+
+The \texttt{battleship\_clanker\_flooding} algorithm exhibits the most sophisticated strategy in this study. Its effectiveness is two-fold: 
+\begin{itemize}
+    \item[•] In \textbf{hunt mode}, it utilizes a checkerboard-parity search, statistically optimizing the search for an initial hit. 
+    \item[•]  In \textbf{target mode}, it intelligently clusters hits to analyze ship orientation, allowing it to "flood" along the correct axis and ignore perpendicular cells. This orientation-aware targeting represents the most efficient strategy by minimizing wasted moves.
+ 
+\end{itemize}
+
+
+In sum, this project provides not only a playable game but also serves as a successful and extensible testbed. It clearly illustrates the compounding performance gains when moving from naive random searches to state-aware heuristics, and finally to an orientation-aware flooding algorithm.
+
+\end{document}
